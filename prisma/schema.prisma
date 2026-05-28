@@ -1,0 +1,81 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMIN
+  AGENT
+}
+
+enum RequestStatus {
+  NEW
+  QUEUED
+  CLASSIFIED
+  IN_PROGRESS
+  RESOLVED
+  FAILED
+}
+
+model User {
+  id           String         @id @default(uuid())
+  email        String         @unique
+  passwordHash String
+  role         Role           @default(AGENT)
+  createdAt    DateTime       @default(now())
+  InternalNote InternalNote[]
+}
+
+model CustomerRequest {
+  id               String            @id @default(uuid())
+  originalMessage  String
+  sourceChannel    String            @default("API") // API, WhatsApp, Email
+  status           RequestStatus     @default(NEW)
+  prioritySnapshot String            @default("PENDING")
+  categorySnapshot String            @default("PENDING")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  AIClassification AIClassification?
+  RequestEvent     RequestEvent[]
+  InternalNote     InternalNote[]
+}
+
+model AIClassification {
+  id         String          @id @default(uuid())
+  requestId  String          @unique
+  request    CustomerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  provider   String          @default("MOCK_AI_v1")
+  category   String          // sales, support, urgent, spam, other
+  priority   String          // low, medium, high
+  summary    String
+  confidence Float
+  reason     String
+  errorState String?
+  createdAt  DateTime        @default(now())
+}
+
+model RequestEvent {
+  id         String          @id @default(uuid())
+  requestId  String
+  request    CustomerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  eventType  String          // STATUS_CHANGE, NOTE_ADDED, AI_PROCESSED
+  oldValue   String?
+  newValue   String?
+  actor      String          @default("SYSTEM")
+  metadata   String?
+  timestamp  DateTime        @default(now())
+}
+
+model InternalNote {
+  id         String          @id @default(uuid())
+  requestId  String
+  request    CustomerRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User            @relation(fields: [authorId], references: [id])
+  noteBody   String
+  createdAt  DateTime        @default(now())
+}

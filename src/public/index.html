@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cognifyr Ops Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-black text-gray-100 font-sans p-6">
+  <div class="max-w-7xl mx-auto">
+    <header class="flex justify-between items-center mb-8 border-b border-gray-900 pb-4">
+      <h1 class="text-2xl font-bold tracking-tight text-white">Cognifyr Workspace</h1>
+      <div id="connectionStatus" class="px-3 py-1 text-xs rounded-full bg-red-950 text-red-400 border border-red-900">Disconnected</div>
+    </header>
+
+    <div id="loginSection" class="max-w-md mx-auto bg-gray-950 p-6 rounded-xl border border-gray-800">
+      <h2 class="text-xl mb-4 font-semibold text-white">Agent Access</h2>
+      <input id="email" type="email" placeholder="email@cognifyr.co" value="admin@cognifyr.co" class="w-full bg-black p-2 mb-3 border border-gray-800 rounded text-white focus:outline-none focus:border-gray-600">
+      <input id="password" type="password" placeholder="••••••••" value="password123" class="w-full bg-black p-2 mb-4 border border-gray-800 rounded text-white focus:outline-none focus:border-gray-600">
+      <button onclick="login()" class="w-full bg-white text-black hover:bg-gray-200 py-2 rounded font-bold transition">Authenticate/Register</button>
+    </div>
+
+    <div id="mainDashboard" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="bg-gray-950 p-4 rounded-xl border border-gray-900 h-fit">
+        <h2 class="text-lg font-bold mb-3 text-white">Submit Inbound Request Simulation</h2>
+        <textarea id="mockMessage" rows="3" placeholder="Type customer message here..." class="w-full bg-black p-2 text-white border border-gray-900 rounded mb-2 focus:outline-none focus:border-gray-700"></textarea>
+        <button onclick="submitRequest()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded font-bold transition">Inject Request into Pipeline</button>
+      </div>
+
+      <div class="bg-gray-950 p-4 rounded-xl border border-gray-900 lg:col-span-1">
+        <h2 class="text-lg font-bold mb-3 text-white">Live Request Ledger</h2>
+        <div id="ticketContainer" class="space-y-2 max-h-[600px] overflow-y-auto"></div>
+      </div>
+
+      <div class="bg-gray-950 p-4 rounded-xl border border-gray-900 lg:col-span-1">
+        <h2 class="text-lg font-bold mb-3 text-white">Inspection & Actions</h2>
+        <div id="detailPane" class="text-gray-500 text-sm italic">Select a ticket from the ledger to inspect data arrays.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let jwtToken = '';
+    let ws;
+    let selectedTicketId = '';
+
+    async function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const res = await fetch('/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      const data = await res.json();
+      if (data.token) {
+        jwtToken = data.token;
+        document.getElementById('loginSection').classList.add('hidden');
+        document.getElementById('mainDashboard').classList.remove('hidden');
+        initWS(); loadTickets();
+      } else { alert('Error authenticating'); }
+    }
+
+    function initWS() {
+      ws = new WebSocket(`ws://${window.location.host}`);
+      ws.onopen = () => {
+        const el = document.getElementById('connectionStatus');
+        el.innerText = 'Connected (Live Updates Enabled)';
+        el.className = 'px-3 py-1 text-xs rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900';
+      };
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        loadTickets();
+        if(selectedTicketId && (msg.data.requestId === selectedTicketId || msg.data.id === selectedTicketId)) {
+          inspectTicket(selectedTicketId);
+        }
+      };
+    }
+
+    async function submitRequest() {
+      const msg = document.getElementById('mockMessage').value;
+      await fetch('/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg }) });
+      document.getElementById('mockMessage').value = '';
+    }
+
+    async function loadTickets() {
+      const res = await fetch('/requests', { headers: { 'Authorization': `Bearer ${jwtToken}` } });
+      const list = await res.json();
+      const container = document.getElementById('ticketContainer');
+      container.innerHTML = '';
+      list.forEach(t => {
+        const div = document.createElement('div');
+        // Styled list elements with a white/dark-gray active layout match
+        div.className = `p-3 rounded border transition cursor-pointer ${selectedTicketId === t.id ? 'bg-gray-900 border-white' : 'bg-black border-gray-900 hover:border-gray-800'}`;
+        div.onclick = () => { selectedTicketId = t.id; loadTickets(); inspectTicket(t.id); };
+        div.innerHTML = `
+          <div class="flex justify-between font-semibold text-xs mb-1">
+            <span class="text-gray-500">ID: ${t.id.slice(0,8)}</span>
+            <span class="px-1.5 py-0.5 rounded text-xs font-bold ${t.status === 'CLASSIFIED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : t.status==='QUEUED'?'bg-amber-950 text-amber-400':'bg-red-950 text-red-400'}">${t.status}</span>
+          </div>
+          <p class="text-sm truncate text-gray-300">${t.originalMessage}</p>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function inspectTicket(id) {
+      const res = await fetch(`/requests/${id}`, { headers: { 'Authorization': `Bearer ${jwtToken}` } });
+      const t = await res.json();
+      const pane = document.getElementById('detailPane');
+      pane.className = "text-gray-300 text-sm space-y-4";
+      
+      let aiBlock = `<div class="bg-black p-3 rounded border border-gray-900 text-amber-400">Processing insights via async background thread...</div>`;
+      if(t.AIClassification) {
+        aiBlock = `
+          <div class="bg-black p-3 rounded border border-gray-900 space-y-1">
+            <p><strong class="text-gray-400">Category:</strong> ${t.AIClassification.category.toUpperCase()}</p>
+            <p><strong class="text-gray-400">Priority:</strong> <span class="${t.AIClassification.priority === 'HIGH' ? 'text-red-400 font-bold' : 'text-gray-200'}">${t.AIClassification.priority.toUpperCase()}</span></p>
+            <p><strong class="text-gray-400">Confidence:</strong> ${(t.AIClassification.confidence * 100).toFixed(0)}%</p>
+            <p><strong class="text-gray-400">Summary:</strong> ${t.AIClassification.summary}</p>
+            <p><strong class="text-gray-400">Reasoning:</strong> ${t.AIClassification.reason}</p>
+          </div>
+        `;
+      }
+
+      // Fixed Crash Bug: Embedded an optional chain (?.) below to prevent mapping over an undefined property array.
+      let timelineHtml = t.RequestEvent?.map(e => `
+        <div class="flex justify-between text-xs text-gray-500 border-b border-gray-900 py-1">
+          <span>${e.eventType} -> ${e.newValue || ''}</span>
+          <span>By: ${e.actor}</span>
+        </div>
+      `).join('') || `<div class="text-xs text-gray-600 italic">No historical pipeline logs found.</div>`;
+
+      pane.innerHTML = `
+        <h3 class="text-base font-bold text-white">Ticket File Details</h3>
+        <div><label class="block text-xs font-bold text-gray-500">MESSAGE BODY</label><p class="bg-black p-2 rounded mt-1 border border-gray-900">${t.originalMessage}</p></div>
+        <div><label class="block text-xs font-bold text-gray-500 mb-1">AI INSIGHT LAYERS</label>${aiBlock}</div>
+        
+        <div>
+          <label class="block text-xs font-bold text-gray-500 mb-1">MUTATE WORKFLOW STATUS</label>
+          <select id="statusSelect" onchange="updateStatus('${t.id}')" class="bg-black border border-gray-900 p-1.5 rounded w-full text-white focus:outline-none focus:border-gray-700">
+            <option value="QUEUED" ${t.status==='QUEUED'?'selected':''}>QUEUED</option>
+            <option value="CLASSIFIED" ${t.status==='CLASSIFIED'?'selected':''}>CLASSIFIED</option>
+            <option value="IN_PROGRESS" ${t.status==='IN_PROGRESS'?'selected':''}>IN_PROGRESS</option>
+            <option value="RESOLVED" ${t.status==='RESOLVED'?'selected':''}>RESOLVED</option>
+            <option value="FAILED" ${t.status==='FAILED'?'selected':''}>FAILED</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-gray-500 mb-1">TIMELINE DIARY</label>
+          <div class="bg-black border border-gray-900 p-2 rounded max-h-32 overflow-y-auto">${timelineHtml}</div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-gray-500 mb-1">APPEND INTERNAL OPERATIONS NOTE</label>
+          <div class="flex gap-2">
+            <input id="noteBody" type="text" placeholder="Add custom action log notes..." class="flex-1 bg-black border border-gray-900 p-1.5 rounded text-white text-xs focus:outline-none focus:border-gray-700">
+            <button onclick="postNote('${t.id}')" class="bg-white text-black text-xs px-3 py-1.5 rounded font-bold hover:bg-gray-200 transition">Add</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function updateStatus(id) {
+      const status = document.getElementById('statusSelect').value;
+      await fetch(`/requests/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` }, body: JSON.stringify({ status }) });
+    }
+
+    async function postNote(id) {
+      const noteBody = document.getElementById('noteBody').value;
+      if(!noteBody) return;
+      await fetch(`/requests/${id}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` }, body: JSON.stringify({ noteBody }) });
+    }
+  </script>
+</body>
+</html>
