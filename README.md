@@ -1,19 +1,27 @@
-
-
-```markdown
 # Cognifyr Workspace
 
-[![Runtime](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org/)
-[![Language](https://img.shields.io/badge/language-TypeScript-blue.svg)](https://www.typescriptlang.org/)
-[![Database](https://img.shields.io/badge/database-Supabase%20%2F%20PostgreSQL-emerald.svg)](https://supabase.com/)
-[![Queue Store](https://img.shields.io/badge/queue-BullMQ%20%2F%20Redis-red.svg)](https://bullmq.io/)
-[![AI Engine](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-indigo.svg)](https://ai.google.dev/)
+<p align="center">
+  <strong>High-throughput, event-driven customer operations platform</strong><br/>
+  Built for async workloads, AI pipelines, and real-time observability
+</p>
 
-Cognifyr Workspace is a high-throughput, minimalist asynchronous customer operations platform. It utilizes a reliable event-driven pipeline (`BullMQ` + `Redis`) to gracefully separate instant inbound ticket ingestion from intense downstream processing tasks handled by the live Google Gemini AI engine. 
-
-The system validates inbound payloads using strict semantic constraints, routes tasks via a persistent message queue, and utilizes WebSockets to instantly broadcast state updates back to a responsive, high-contrast dashboard.
-
----
+<p align="center">
+  <a href="https://nodejs.org/">
+    <img src="https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg" />
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/language-TypeScript-blue.svg" />
+  </a>
+  <a href="https://supabase.com/">
+    <img src="https://img.shields.io/badge/database-Supabase%20%2F%20PostgreSQL-emerald.svg" />
+  </a>
+  <a href="https://bullmq.io/">
+    <img src="https://img.shields.io/badge/queue-BullMQ%20%2F%20Redis-red.svg" />
+  </a>
+  <a href="https://ai.google.dev/">
+    <img src="https://img.shields.io/badge/AI-Gemini%202.5%20Flash-indigo.svg" />
+  </a>
+</p>
 
 ## System Architecture
 
