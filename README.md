@@ -58,6 +58,8 @@ The workflow leverages a decoupled background worker architecture to handle burs
 4. **State Synchronicity:** Updates commit to the Supabase database instance while a WebSocket event triggers real-time visual reactivity on the administrative ledger.
 
 ---
+<img width="1790" height="879" alt="image" src="https://github.com/user-attachments/assets/da3186a2-bc5c-42b0-bdd4-3c7f57bf1530" />
+
 
 ## Core Technical Stack
 
@@ -71,6 +73,9 @@ The workflow leverages a decoupled background worker architecture to handle burs
 * **Visual Engine:** Monochromatic Tailwind CSS presentation engine
 
 ---
+
+
+
 
 ## Directory Schema Map
 
