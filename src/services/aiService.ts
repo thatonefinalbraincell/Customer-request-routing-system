@@ -1,61 +1,58 @@
 import { GoogleGenAI, Type } from '@google/genai';
 
-// Instantiates the live AI client engine using your secure environment key
+// Initialize the client using your environment variable
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-export interface AIStructuredOutput {
-  category: 'sales' | 'support' | 'urgent' | 'spam' | 'other';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH'; // Upper case to perfectly match your Prisma/Supabase types
-  summary: string;
-  confidence: number;
-  reason: string;
-}
+// Enforce a strict JSON contract for the multi-skill categorization
+const classificationSchema = {
+  type: Type.OBJECT,
+  properties: {
+    category: {
+      type: Type.STRING,
+      enum: ["sales", "support", "urgent", "spam", "other"],
+      description: "Classifies the request into sales, support, urgent, spam, or other exactly based on user intent.",
+    },
+    priority: {
+      type: Type.STRING,
+      enum: ["low", "medium", "high"],
+      description: "Assigns priority based on urgency, intent, language, and business impact.",
+    },
+    summary: {
+      type: Type.STRING,
+      description: "Generates a short internal summary that helps an admin understand the request quickly.",
+    },
+    reason: {
+      type: Type.STRING,
+      description: "Briefly states the logical reasoning behind the selected classification queue.",
+    },
+    confidence: {
+      type: Type.NUMBER,
+      description: "Confidence coefficient rating from 0.0 to 1.0.",
+    }
+  },
+  required: ["category", "priority", "summary", "reason", "confidence"],
+};
 
-export const analyzeMessage = async (message: string): Promise<AIStructuredOutput> => {
+export const analyzeMessage = async (message: string) => {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Analyze this customer support request ticket: "${message}"`,
+      contents: `Analyze the following customer inbound communication and break down the operational metadata according to the required schema rule constraints.\n\nMessage: "${message}"`,
       config: {
-        systemInstruction: `
-          You are an advanced automated support ticket classification system. 
-          Analyze the input text and respond with structured properties.
-          
-          Priority rules:
-          - 'HIGH': Set if the user mentions an application crash, an error message, payment/checkout blocks, severe bugs, or frozen states.
-          - 'MEDIUM': Set if a non-breaking feature is buggy, slow, or acting up, but the app is still semi-functional.
-          - 'LOW': Set for general inquiries, account assistance, UI feedback, or feature requests.
-        `,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            category: { type: Type.STRING, enum: ['sales', 'support', 'urgent', 'spam', 'other'] },
-            priority: { type: Type.STRING, enum: ['LOW', 'MEDIUM', 'HIGH'] }, // Match database Enums
-            summary: { type: Type.STRING },
-            confidence: { type: Type.NUMBER },
-            reason: { type: Type.STRING },
-          },
-          required: ['category', 'priority', 'summary', 'confidence', 'reason'],
-        },
+        responseMimeType: "application/json",
+        responseSchema: classificationSchema,
+        systemInstruction: "You are an advanced operations engine routing system. Analyze intent with deep semantic precision. Do not wrap code in markdown. Return raw JSON parsing data.",
       },
     });
 
     if (!response.text) {
-      throw new Error('Empty text payload returned from AI engine');
+      throw new Error("Empty text block string returned from inference engine.");
     }
 
-    return JSON.parse(response.text) as AIStructuredOutput;
-  } catch (error: any) {
-    console.error('⚠️ Live AI Analysis failed. Falling back to default baseline rules:', error.message);
-    
-    // Fallback safe mechanism ensures your server never crashes if the internet or API keys drop out
-    return {
-      category: 'other',
-      priority: 'LOW',
-      summary: message.substring(0, 50) + '...',
-      confidence: 0.50,
-      reason: 'Automated fallback due to upstream inference timeout or network error.',
-    };
+    // Parse the strict structural output array directly
+    return JSON.parse(response.text);
+  } catch (error) {
+    console.error("AI Analysis Pipeline failure:", error);
+    throw error;
   }
 };

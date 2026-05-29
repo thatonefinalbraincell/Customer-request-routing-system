@@ -56,6 +56,7 @@
       } else { alert('Error authenticating'); }
     }
 
+    // Initialize WebSockets
     function initWS() {
       ws = new WebSocket(`ws://${window.location.host}`);
       ws.onopen = () => {
@@ -72,12 +73,36 @@
       };
     }
 
+    // Submit Simulation Input
     async function submitRequest() {
       const msg = document.getElementById('mockMessage').value;
       await fetch('/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg }) });
       document.getElementById('mockMessage').value = '';
     }
 
+    // Time formatter for clean, relative dashboard timestamps
+    function formatTimeAgo(dateString) {
+      if (!dateString) return '';
+      const now = new Date();
+      const past = new Date(dateString);
+      const elapsed = now - past;
+      
+      const msPerMinute = 60 * 1000;
+      const msPerHour = msPerMinute * 60;
+      const msPerDay = msPerHour * 24;
+      
+      if (elapsed < msPerMinute) {
+        return 'Just now';   
+      } else if (elapsed < msPerHour) {
+        return Math.round(elapsed / msPerMinute) + 'm ago';   
+      } else if (elapsed < msPerDay) {
+        return Math.round(elapsed / msPerHour) + 'h ago';   
+      } else {
+        return past.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      }
+    }
+
+    // Load Live Request Ledger Array with Time Offsets
     async function loadTickets() {
       const res = await fetch('/requests', { headers: { 'Authorization': `Bearer ${jwtToken}` } });
       const list = await res.json();
@@ -85,13 +110,17 @@
       container.innerHTML = '';
       list.forEach(t => {
         const div = document.createElement('div');
-        // Styled list elements with a white/dark-gray active layout match
         div.className = `p-3 rounded border transition cursor-pointer ${selectedTicketId === t.id ? 'bg-gray-900 border-white' : 'bg-black border-gray-900 hover:border-gray-800'}`;
         div.onclick = () => { selectedTicketId = t.id; loadTickets(); inspectTicket(t.id); };
+        
+        // ADDED: Added live relative runtime metadata tags here inside the layout flex row
         div.innerHTML = `
-          <div class="flex justify-between font-semibold text-xs mb-1">
+          <div class="flex justify-between font-semibold text-xs mb-1 items-center">
             <span class="text-gray-500">ID: ${t.id.slice(0,8)}</span>
-            <span class="px-1.5 py-0.5 rounded text-xs font-bold ${t.status === 'CLASSIFIED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : t.status==='QUEUED'?'bg-amber-950 text-amber-400':'bg-red-950 text-red-400'}">${t.status}</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-gray-500 font-mono">${formatTimeAgo(t.createdAt)}</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${t.status === 'CLASSIFIED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : t.status==='QUEUED'?'bg-amber-950 text-amber-400':'bg-red-950 text-red-400'}">${t.status}</span>
+            </div>
           </div>
           <p class="text-sm truncate text-gray-300">${t.originalMessage}</p>
         `;
@@ -99,6 +128,7 @@
       });
     }
 
+    // Inspect Ticket Action Panel Details
     async function inspectTicket(id) {
       const res = await fetch(`/requests/${id}`, { headers: { 'Authorization': `Bearer ${jwtToken}` } });
       const t = await res.json();
@@ -118,13 +148,20 @@
         `;
       }
 
-      // Fixed Crash Bug: Embedded an optional chain (?.) below to prevent mapping over an undefined property array.
-      let timelineHtml = t.RequestEvent?.map(e => `
-        <div class="flex justify-between text-xs text-gray-500 border-b border-gray-900 py-1">
-          <span>${e.eventType} -> ${e.newValue || ''}</span>
-          <span>By: ${e.actor}</span>
-        </div>
-      `).join('') || `<div class="text-xs text-gray-600 italic">No historical pipeline logs found.</div>`;
+      let timelineHtml = '<div class="text-xs text-gray-600 italic">No historical pipeline logs found.</div>';
+      if (t.RequestEvent && t.RequestEvent.length > 0) {
+        timelineHtml = `
+          <ul class="space-y-3 border-l border-neutral-800 pl-4 font-mono text-xs">
+            ${t.RequestEvent.map(event => `
+              <li class="relative">
+                <span class="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-neutral-700 border border-neutral-950"></span>
+                <div class="text-neutral-400 font-semibold">${event.eventType} -> <span class="text-neutral-200">${event.newValue || ''}</span></div>
+                <div class="text-neutral-600">${formatTimeAgo(event.timestamp)} • by ${event.actor || 'System'}</div>
+              </li>
+            `).join('')}
+          </ul>
+        `;
+      }
 
       pane.innerHTML = `
         <h3 class="text-base font-bold text-white">Ticket File Details</h3>
@@ -166,7 +203,16 @@
       const noteBody = document.getElementById('noteBody').value;
       if(!noteBody) return;
       await fetch(`/requests/${id}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwtToken}` }, body: JSON.stringify({ noteBody }) });
+      document.getElementById('noteBody').value = '';
     }
+
+    // Expose handlers to window scope so HTML onclick tags work perfectly under ES Modules
+    window.login = login;
+    window.submitRequest = submitRequest;
+    window.loadTickets = loadTickets;
+    window.inspectTicket = inspectTicket;
+    window.updateStatus = updateStatus;
+    window.postNote = postNote;
   </script>
 </body>
 </html>

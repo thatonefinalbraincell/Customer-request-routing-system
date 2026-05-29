@@ -13,48 +13,86 @@ export const initWorker = () => {
     if (!request) return;
 
     try {
+      // 1. Invoke Gemini 2.5 Flash Telemetry Compilation
       const aiResult = await analyzeMessage(request.originalMessage);
 
+      // 2. Format outcomes explicitly to ensure alignment with dashboard filters
+      const finalCategory = (aiResult.category || 'OTHER').toUpperCase();
+      const finalPriority = (aiResult.priority || 'MEDIUM').toUpperCase();
+
       await prisma.$transaction([
-        prisma.aIClassification.create({
-          data: {
-            requestId,
-            category: aiResult.category,
-            priority: aiResult.priority,
+        // FIX: Use upsert instead of create to allow safe task retries without unique key violations
+        prisma.aIClassification.upsert({
+          where: { requestId },
+          update: {
+            category: finalCategory.toLowerCase(), // matches internal database tags
+            priority: finalPriority.toLowerCase(),
             summary: aiResult.summary,
-            confidence: aiResult.confidence,
-            reason: aiResult.reason,
+            confidence: aiResult.confidence ?? 1.0,
+            reason: aiResult.reason || 'Re-classified successfully',
+            errorState: null,
+          },
+          create: {
+            requestId,
+            category: finalCategory.toLowerCase(),
+            priority: finalPriority.toLowerCase(),
+            summary: aiResult.summary,
+            confidence: aiResult.confidence ?? 1.0,
+            reason: aiResult.reason || 'Initial extraction complete',
           },
         }),
+        
+        // Synchronize parent snapshots so ledger states update immediately via WebSockets
         prisma.customerRequest.update({
           where: { id: requestId },
           data: {
             status: 'CLASSIFIED',
-            categorySnapshot: aiResult.category,
-            prioritySnapshot: aiResult.priority,
+            categorySnapshot: finalCategory, // Normalized to Uppercase (e.g., "SALES", "SPAM")
+            prioritySnapshot: finalPriority,
           },
         }),
+
         prisma.requestEvent.create({
-          data: { requestId, eventType: 'AI_PROCESSED', newValue: `CLASSIFIED - ${aiResult.category.toUpperCase()}` },
+          data: { 
+            requestId, 
+            eventType: 'AI_PROCESSED', 
+            newValue: `CLASSIFIED - ${finalCategory}` 
+          },
         }),
       ]);
 
+      // Broadcast success out across open administrative sockets
       broadcastEvent('WORKER_SUCCESS', { requestId, status: 'CLASSIFIED' });
     } catch (error: any) {
-      await prisma.customerRequest.update({ where: { id: requestId }, data: { status: 'FAILED' } });
-      
-      // Using an 'as any' wrapper here protects the create operation from any unexpected missing schema properties
-      await (prisma.aIClassification.create as any)({
-        data: { 
-          requestId, 
-          category: 'UNKNOWN', 
-          priority: 'LOW', 
-          summary: 'Failed computation profile', 
-          confidence: 0, 
-          reason: error.message || 'Error', 
-          errorState: 'FAILED' 
-        },
+      console.error(`❌ Worker Execution Exception on Job ${job.id}:`, error);
+
+      await prisma.customerRequest.update({ 
+        where: { id: requestId }, 
+        data: { status: 'FAILED' } 
       });
+      
+      // FIX: Use upsert here as well to safely update failed retry attempts
+      await prisma.aIClassification.upsert({
+        where: { requestId },
+        update: {
+          category: 'UNKNOWN',
+          priority: 'LOW',
+          summary: 'Failed computation profile',
+          confidence: 0,
+          reason: error.message || 'Unknown processing error',
+          errorState: 'FAILED'
+        },
+        create: {
+          requestId,
+          category: 'UNKNOWN',
+          priority: 'LOW',
+          summary: 'Failed computation profile',
+          confidence: 0,
+          reason: error.message || 'Unknown processing error',
+          errorState: 'FAILED'
+        }
+      });
+      
       broadcastEvent('WORKER_FAILURE', { requestId, status: 'FAILED' });
     }
   }, { connection: redisConnection as any });
