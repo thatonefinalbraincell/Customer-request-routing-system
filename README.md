@@ -48,7 +48,7 @@ The workflow leverages a decoupled background worker architecture to handle burs
                    [ WebSocket Broadcaster ]
                                │
                                ▼
-                 [ Pitch-Black Client Interface ]
+                      [ Client Interface ]
 
 ```
 
@@ -140,14 +140,13 @@ npm install
 To clean, build, compile, and execute the production targets securely, run the following command matrix:
 
 ```bash
-# Compile TypeScript files into JavaScript build targets
-npx tsc
+# 1. Install, generate Prisma database client types, and compile typescript to /dist
+npm install
+npm run prisma:generate
+npm run build
 
-# Generate deep-typed database client mappings via Prisma
-npx prisma generate
-
-# Initialize the continuous server runtime environment
-node dist/index.js
+# 2. Safely apply pending production migrations and launch the integrated server
+npm start
 
 ```
 
