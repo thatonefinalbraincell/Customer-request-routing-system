@@ -56,20 +56,34 @@
       } else { alert('Error authenticating'); }
     }
 
-    // Initialize WebSockets
+    // Initialize WebSockets securely with automatic protocol switching and token ingestion
     function initWS() {
-      ws = new WebSocket(`ws://${window.location.host}`);
+      // Automatically toggle secure protocol ('wss') when running on HTTPS (Railway production)
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      
+      // Pass the security token inside the query string so the gateway handshakes cleanly
+      ws = new WebSocket(`${protocol}//${window.location.host}?token=${jwtToken}`);
+      
       ws.onopen = () => {
         const el = document.getElementById('connectionStatus');
         el.innerText = 'Connected (Live Updates Enabled)';
         el.className = 'px-3 py-1 text-xs rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900';
       };
+
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         loadTickets();
         if(selectedTicketId && (msg.data.requestId === selectedTicketId || msg.data.id === selectedTicketId)) {
           inspectTicket(selectedTicketId);
         }
+      };
+
+      // Auto-reconnect handling loop if the live dyno drops or recycles
+      ws.onclose = () => {
+        const el = document.getElementById('connectionStatus');
+        el.innerText = 'Disconnected (Retrying...)';
+        el.className = 'px-3 py-1 text-xs rounded-full bg-red-950 text-red-400 border border-red-900';
+        setTimeout(initWS, 5000); 
       };
     }
 
@@ -113,7 +127,6 @@
         div.className = `p-3 rounded border transition cursor-pointer ${selectedTicketId === t.id ? 'bg-gray-900 border-white' : 'bg-black border-gray-900 hover:border-gray-800'}`;
         div.onclick = () => { selectedTicketId = t.id; loadTickets(); inspectTicket(t.id); };
         
-        // ADDED: Added live relative runtime metadata tags here inside the layout flex row
         div.innerHTML = `
           <div class="flex justify-between font-semibold text-xs mb-1 items-center">
             <span class="text-gray-500">ID: ${t.id.slice(0,8)}</span>
