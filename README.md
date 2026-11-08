@@ -1,4 +1,4 @@
-# Cognifyr Workspace
+# DispatchIQ Workspace
 
 <p align="center">
   <strong>High-throughput, event-driven customer operations platform</strong><br/>
@@ -80,7 +80,7 @@ The workflow leverages a decoupled background worker architecture to handle burs
 ## Directory Schema Map
 
 ```text
-cognifyr-ops/
+dispatchiq-ops/
 ├── prisma/                 # Relational schema engines and migration logs
 │   └── schema.prisma       # Database design parameters
 ├── src/                    # TypeSafe Source Directory
